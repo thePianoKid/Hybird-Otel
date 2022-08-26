@@ -1,0 +1,78 @@
+#!/bin/sh
+set -eux
+version=$1
+frontend_port=8081
+backend_port=9000
+
+# Build the code and copy the results into the installation root
+cd ${version}
+/code/build-bin/maven/maven_build
+mkdir -p install/classes install/lib
+case ${version} in
+  *-jetty ) /code/docker/bin/install-example-jetty;;
+  * )
+   # copy compiled classes and dependencies
+   mvn -q --batch-mode -DoutputDirectory=install/lib dependency:copy-dependencies
+   cp -r target/classes/* install/classes/
+   ;;
+esac
+
+mv install /install
+
+mkdir /install/bin && cd /install/bin
+
+# Generate ENTRYPOINT scripts used in the Dockerfile
+tee -a start-frontend start-backend <<-'EOF'
+#!/bin/sh
+# Export variables in case forked commands need to read them
+export IP="$(hostname -i || echo '127.0.0.1')"
+EOF
+
+cat >> start-frontend <<-EOF
+export PORT=${frontend_port}
+export EXAMPLE=${version}
+export EXAMPLE_SERVICE=frontend
+EOF
+
+cat >> start-backend <<-EOF
+export PORT=${backend_port}
+export EXAMPLE=${version}
+export EXAMPLE_SERVICE=backend
+EOF
+
+# Add common elements for Java applications
+tee -a start-frontend start-backend <<-'EOF'
+export HEALTHCHECK_IP=${IP}
+export HEALTHCHECK_PORT=${PORT}
+export HEALTHCHECK_KIND=http
+
+JAVA_OPTS=${JAVA_OPTS:-"-Xms32m -Xmx32m -XX:+ExitOnOutOfMemoryError"}
+
+exec java ${JAVA_OPTS} -cp 'classes:lib/*' \
+-Dbrave.localServiceName=${EXAMPLE_SERVICE} \
+-Dbrave.supportsJoin=${BRAVE_SUPPORTS_JOIN:-true} \
+-Dbrave.traceId128Bit=${BRAVE_TRACEID_128:-false} \
+-Dzipkin.baseUrl=${ZIPKIN_BASEURL:-http://zipkin:9411/} \
+EOF
+
+echo "-Dbackend.endpoint=http://backend:${backend_port}/api \\" >> start-frontend
+
+# Add the main class
+echo 'brave.example.Frontend "$@"' >> start-frontend
+echo 'brave.example.Backend "$@"' >> start-backend
+
+# Add HEALTHCHECK script used in the Dockerfile
+cp -p /code/build-bin/docker/docker-healthcheck .
+
+# Make any platform-specific revisions
+case ${version} in
+  *-jetty ) /code/docker/bin/post-install-example-jetty;;
+  dropwizard ) /code/docker/bin/post-install-example-dropwizard;;
+  # Ratpack system properties must be prefixed with "ratpack."
+  ratpack ) sed -i 's/-D/-Dratpack./g' start-frontend start-backend;;
+  *-cassandra3 ) /code/docker/bin/post-install-example-cassandra;;
+  *-grpc ) /code/docker/bin/post-install-example-grpc;;
+  *-kafka ) /code/docker/bin/post-install-example-kafka;;
+esac
+
+chmod 755 *

@@ -1,0 +1,27 @@
+#!/bin/sh -ue
+
+# This script runs the tests of the project.
+#
+# See [README.md] for an explanation of this and how CI should use it.
+export VERSION=${1:-armeria}
+# Some images override base layers or other properties of the docker build
+. build-bin/docker_args
+
+docker_image=openzipkin/brave-example:${VERSION}-test
+
+echo "Building Docker image..."
+build-bin/docker/docker_build ${docker_image} ${VERSION}
+
+docker_compose_file=build-bin/docker-compose.test.yml
+
+case ${VERSION} in
+  armeria-kafka* )
+    docker_compose_file=build-bin/docker-compose-kafka.test.yml
+    ;;
+  * )
+    docker_compose_file=build-bin/docker-compose.test.yml
+    ;;
+esac
+
+echo "Verifying Docker image..."
+build-bin/docker/docker_test_image ${docker_image} ${docker_compose_file}

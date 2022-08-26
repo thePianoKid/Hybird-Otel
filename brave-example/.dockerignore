@@ -1,0 +1,28 @@
+# https://docs.docker.com/engine/reference/builder/#dockerignore-file
+**
+
+# Install scripts run within Docker
+!build-bin/maven/*
+!docker/bin/*
+
+# Use standard HEALTHCHECK script
+!build-bin/docker/docker-healthcheck
+
+# Allow on-demand "mvn package".
+!armeria/src/main/**
+!armeria-kafka/src/main/**
+!dropwizard/src/main/**
+!jersey2-cassandra3/src/main/**
+!netty4-grpc/src/main/**
+!ratpack/src/main/**
+!webflux5-sleuth/src/main/**
+!webmvc3-jetty/src/main/**
+!webmvc4-boot/src/main/**
+!webmvc4-jetty/src/main/**
+!webmvc25-jetty/src/main/**
+!**/pom.xml
+!/parent-pom.xml
+
+# We cannot share paths outside the current directory with the Docker context
+# (ex via symlinks). So, build-bin/configure_* overrides maven.repo.local
+!/m2repository
